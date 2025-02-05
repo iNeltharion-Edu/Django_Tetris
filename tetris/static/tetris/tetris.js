@@ -1,15 +1,23 @@
 const canvas = document.getElementById('tetris');
 const context = canvas.getContext('2d');
+const nextPieceCanvas = document.getElementById('next-piece');
+const nextPieceContext = nextPieceCanvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+const volumeElement = document.getElementById('volume');
+const pauseElement = document.getElementById('pause');
+const music = document.getElementById('music');
+const startButton = document.getElementById('startButton');
 
 const ROWS = 20;
 const COLS = 10;
 const BLOCK_SIZE = 30;
+const SCORE_PER_LINE = 10;
 
-context.scale(BLOCK_SIZE, BLOCK_SIZE);
+const COLORS = [
+    '#67BFFA', '#FF9638', '#FFDD33', '#74C259', '#D13A3A', '#974AB4'
+];
 
-const board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-
-const shapes = [
+const SHAPES = [
     [[0, 1, 0], [1, 1, 1]],  // T
     [[1, 1, 1, 1]],          // I
     [[1, 1], [1, 1]],        // O
@@ -19,110 +27,235 @@ const shapes = [
     [[0, 1, 1], [1, 1, 0]]   // S
 ];
 
-let currentPiece = shapes[Math.floor(Math.random() * shapes.length)];
-let currentPosition = { x: COLS / 2 - 1, y: 0 };
+let board;
+let currentPiece;
+let nextPiece;
+let currentPosition;
+let score;
+let isPaused;
+let isGameOver;
+let fallSpeed;
+let volume;
+let isGameStarted = false;
+let gameLoop;
+let timeAccumulator;
+let lastTime;
 
-function drawPiece(piece, offset) {
-    piece.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value) {
-                context.fillStyle = 'blue';
-                context.fillRect(x + offset.x, y + offset.y, 1, 1);
-            }
-        });
-    });
+function initGame() {
+    board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    score = 0;
+    isPaused = false;
+    isGameOver = false;
+    fallSpeed = 500;
+    volume = 0.3;
+    timeAccumulator = 0;
+    lastTime = performance.now();
+    scoreElement.textContent = `Score: ${score}`;
+    pauseElement.textContent = `Paused: No`;
+    music.volume = volume;
+    volumeElement.textContent = `Volume: ${Math.round(volume * 100)}%`;
+    spawnPiece();
+}
+
+function updateVolumeDisplay() {
+    const bars = '■■■■■'.slice(0, Math.floor(volume * 5)) + '□□□□□'.slice(0, 5 - Math.floor(volume * 5));
+    volumeElement.textContent = bars;
+}
+
+
+function createPiece() {
+    const piece = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    return { shape: piece, color };
+}
+
+function drawBlock(ctx, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
 }
 
 function drawBoard() {
-    board.forEach((row, y) => {
-        row.forEach((value, x) => {
-            if (value) {
-                context.fillStyle = 'red';
-                context.fillRect(x, y, 1, 1);
-            }
-        });
-    });
-}
-
-function draw() {
     context.clearRect(0, 0, canvas.width, canvas.height);
-    drawBoard();
-    drawPiece(currentPiece, currentPosition);
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            if (board[y][x]) {
+                drawBlock(context, x, y, board[y][x]);
+            }
+        }
+    }
+    if (currentPiece) {
+        currentPiece.shape.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value) {
+                    drawBlock(context, currentPosition.x + x, currentPosition.y + y, currentPiece.color);
+                }
+            });
+        });
+    }
 }
 
-function movePiece(dir) {
-    currentPosition.x += dir;
+function drawNextPiece() {
+    nextPieceContext.clearRect(0, 0, nextPieceCanvas.width, nextPieceCanvas.height);
+    if (nextPiece) {
+        nextPiece.shape.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value) {
+                    drawBlock(nextPieceContext, x, y, nextPiece.color);
+                }
+            });
+        });
+    }
+}
+
+function movePiece(dx, dy) {
+    if (!isGameStarted || isPaused || isGameOver) return;
+
+    currentPosition.x += dx;
+    currentPosition.y += dy;
     if (collide()) {
-        currentPosition.x -= dir;
+        currentPosition.x -= dx;
+        currentPosition.y -= dy;
+        if (dy > 0) {
+            fixPiece();
+        }
     }
 }
 
 function rotatePiece() {
-    const rotated = currentPiece[0].map((_, i) => currentPiece.map(row => row[i])).reverse();
-    const prevPiece = currentPiece;
-    currentPiece = rotated;
+    if (!isGameStarted || isPaused || isGameOver) return;
+
+    const rotated = currentPiece.shape[0].map((_, i) =>
+        currentPiece.shape.map(row => row[i])
+    ).reverse();
+    const prevShape = currentPiece.shape;
+    currentPiece.shape = rotated;
     if (collide()) {
-        currentPiece = prevPiece;
+        currentPiece.shape = prevShape;
     }
 }
 
 function collide() {
-    for (let y = 0; y < currentPiece.length; y++) {
-        for (let x = 0; x < currentPiece[y].length; x++) {
-            if (currentPiece[y][x] && (board[y + currentPosition.y] && board[y + currentPosition.y][x + currentPosition.x]) !== 0) {
-                return true;
+    for (let y = 0; y < currentPiece.shape.length; y++) {
+        for (let x = 0; x < currentPiece.shape[y].length; x++) {
+            if (currentPiece.shape[y][x]) {
+                const nx = currentPosition.x + x;
+                const ny = currentPosition.y + y;
+                if (nx < 0 || nx >= COLS || ny >= ROWS || board[ny][nx]) {
+                    return true;
+                }
             }
         }
     }
     return false;
 }
 
-function dropPiece() {
-    currentPosition.y++;
-    if (collide()) {
-        currentPosition.y--;
-        mergePiece();
-        clearLines();
-        currentPiece = shapes[Math.floor(Math.random() * shapes.length)];
-        currentPosition = { x: COLS / 2 - 1, y: 0 };
-        if (collide()) {
-            alert('Game Over!');
-            board.forEach(row => row.fill(0));
-        }
-    }
-}
-
-function mergePiece() {
-    currentPiece.forEach((row, y) => {
+function fixPiece() {
+    currentPiece.shape.forEach((row, y) => {
         row.forEach((value, x) => {
             if (value) {
-                board[y + currentPosition.y][x + currentPosition.x] = value;
+                board[currentPosition.y + y][currentPosition.x + x] = currentPiece.color;
             }
         });
     });
+    clearLines();
+    spawnPiece();
 }
 
 function clearLines() {
-    for (let y = board.length - 1; y >= 0; y--) {
-        if (board[y].every(cell => cell !== 0)) {
+    let linesCleared = 0;
+    for (let y = ROWS - 1; y >= 0; y--) {
+        if (board[y].every(cell => cell)) {
             board.splice(y, 1);
             board.unshift(Array(COLS).fill(0));
+            linesCleared++;
         }
+    }
+    if (linesCleared > 0) {
+        score += linesCleared * SCORE_PER_LINE;
+        scoreElement.textContent = `Score: ${score}`;
     }
 }
 
-document.addEventListener('keydown', event => {
-    if (event.key === 'ArrowLeft') {
-        movePiece(-1);
-    } else if (event.key === 'ArrowRight') {
-        movePiece(1);
-    } else if (event.key === 'ArrowDown') {
-        dropPiece();
-    } else if (event.key === 'ArrowUp') {
-        rotatePiece();
+function spawnPiece() {
+    currentPiece = nextPiece || createPiece();
+    nextPiece = createPiece();
+    currentPosition = {
+        x: Math.floor(COLS / 2) - Math.floor(currentPiece.shape[0].length / 2),
+        y: 0
+    };
+
+    if (collide()) {
+        isGameOver = true;
+        startButton.style.display = 'block';
+        pauseElement.textContent = 'GAME OVER';
+        isGameStarted = false;
     }
-    draw();
+    drawNextPiece();
+}
+
+function update(time = 0) {
+    if (!isGameStarted) return;
+
+    const deltaTime = time - lastTime;
+    lastTime = time;
+
+    if (!isPaused && !isGameOver) {
+        timeAccumulator += deltaTime;
+        while (timeAccumulator > fallSpeed) {
+            movePiece(0, 1);
+            timeAccumulator -= fallSpeed;
+        }
+    }
+
+    drawBoard();
+    gameLoop = requestAnimationFrame(update);
+}
+
+document.addEventListener('keydown', (event) => {
+    if (!isGameStarted) return;
+
+    switch(event.key) {
+        case 'ArrowLeft':
+            movePiece(-1, 0);
+            break;
+        case 'ArrowRight':
+            movePiece(1, 0);
+            break;
+        case 'ArrowDown':
+            movePiece(0, 1);
+            break;
+        case 'ArrowUp':
+            rotatePiece();
+            break;
+        case ' ':
+            isPaused = !isPaused;
+            pauseElement.textContent = isPaused ? 'PAUSED' : 'PLAYING';
+            break;
+        case '+':
+            volume = Math.min(1, volume + 0.2);
+            music.volume = volume;
+            updateVolumeDisplay();
+            break;
+        case '-':
+            volume = Math.max(0, volume - 0.2);
+            music.volume = volume;
+            updateVolumeDisplay();
+            break;
+    }
 });
 
-setInterval(dropPiece, 1000);
-setInterval(draw, 50);
+
+startButton.addEventListener('click', () => {
+    if (!isGameStarted) {
+        music.play()
+            .then(() => {
+                isGameStarted = true;
+                startButton.style.display = 'none';
+                initGame();
+                gameLoop = requestAnimationFrame(update);
+            })
+            .catch(error => console.error('Ошибка воспроизведения:', error));
+    }
+});
