@@ -42,8 +42,8 @@
 3. Примените миграции:
 
    ```bash
+   python manage.py makemigrations
    python manage.py migrate
-   python manage.py createsuperuser
    ```
 
 4. Запустите сервер разработки:
@@ -73,7 +73,6 @@
 
 ![Tetris Screenshot](images/tetris1.png)
 
-*Нажмите на изображение, чтобы увеличить.*
 
 ## Технологии
 
