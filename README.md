@@ -69,9 +69,9 @@
 
 ## Скриншот
 
-![Tetris Screenshot](images/tetris.png)
+![Tetris Screenshot](images/tetrismain.png)
 
-![Tetris Screenshot](images/tetris1.png)
+![Tetris Screenshot](images/tetrismain2.png)
 
 
 ## Технологии
