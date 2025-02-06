@@ -48,7 +48,7 @@ function initGame() {
     isPaused = false;
     isGameOver = false;
     fallSpeed = 500;
-    volume = 0.3;
+    volume = 0.4;
     timeAccumulator = 0;
     lastTime = performance.now();
     scoreElement.textContent = `Score: ${score}`;
