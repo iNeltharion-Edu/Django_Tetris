@@ -28,6 +28,7 @@ const SHAPES = [
 ];
 
 let board;
+let previousPieceType = null;
 let currentPiece;
 let nextPiece;
 let currentPosition;
@@ -64,10 +65,16 @@ function updateVolumeDisplay() {
 
 
 function createPiece() {
-    const piece = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    let piece;
+    do {
+        piece = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    } while (previousPieceType && piece === previousPieceType);
+
+    previousPieceType = piece; // Запоминаем последний тип фигуры
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
     return { shape: piece, color };
 }
+
 
 function drawBlock(ctx, x, y, color) {
     ctx.fillStyle = color;
@@ -165,16 +172,32 @@ function fixPiece() {
 
 function clearLines() {
     let linesCleared = 0;
+    const rowsToRemove = [];
+
     for (let y = ROWS - 1; y >= 0; y--) {
         if (board[y].every(cell => cell)) {
-            board.splice(y, 1);
-            board.unshift(Array(COLS).fill(0));
-            linesCleared++;
+            rowsToRemove.push(y);
         }
     }
+
+    rowsToRemove.forEach(y => {
+        board.splice(y, 1);
+    });
+
+    for (let i = 0; i < rowsToRemove.length; i++) {
+        board.unshift(Array(COLS).fill(0));
+    }
+
+    linesCleared = rowsToRemove.length;
+
     if (linesCleared > 0) {
         score += linesCleared * SCORE_PER_LINE;
         scoreElement.textContent = `Score: ${score}`;
+
+        // Ускоряем падение фигур каждые 100 очков
+        if (score % 100 === 0) {
+            fallSpeed = Math.max(50, fallSpeed - 50); // Минимальная скорость - 50мс
+        }
     }
 }
 
