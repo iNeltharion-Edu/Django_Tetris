@@ -54,7 +54,7 @@ function initGame() {
     scoreElement.textContent = `Score: ${score}`;
     pauseElement.textContent = `Paused: No`;
     music.volume = volume;
-    volumeElement.textContent = `Volume: ${Math.round(volume * 100)}%`;
+    updateVolumeDisplay();
     spawnPiece();
 }
 
